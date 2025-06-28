@@ -6,14 +6,9 @@
     <title>Control de Gastos (Conexión Personal)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<!-- Link to Manifest File -->
-<link rel="manifest" href="manifest.json">
-
-<!-- Apple Touch Icon -->
-<link rel="apple-touch-icon" href="icon-192.png">
-
-<!-- Theme Color for Safari -->
-<meta name="theme-color" content="#4f46e5">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="theme-color" content="#4f46e5">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: "Inter", sans-serif; background-color: #f3f4f6; }
@@ -91,20 +86,14 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // =================================================================================
-        // PASO FINAL: PEGA AQUÍ TUS "LLAVES" DE FIREBASE
-        // Reemplaza todo este bloque de 'firebaseConfig' con el que copiaste 
-        // del Paso 3 de la guía.
-        // =================================================================================
-      const firebaseConfig = {
-  apiKey: "AIzaSyCtx5dczhAdJASGkmPxve2T-4RFee3bVug",
-  authDomain: "mis-gastos-personales-57e39.firebaseapp.com",
-  projectId: "mis-gastos-personales-57e39",
-  storageBucket: "mis-gastos-personales-57e39.firebasestorage.app",
-  messagingSenderId: "746432410147",
-  appId: "1:746432410147:web:02d95cf9bee186f090f796"
-};
-        // =================================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCtx5dczhAdJASGkmPxve2T-4RFee3bVug",
+            authDomain: "mis-gastos-personales-57e39.firebaseapp.com",
+            projectId: "mis-gastos-personales-57e39",
+            storageBucket: "mis-gastos-personales-57e39.firebasestorage.app",
+            messagingSenderId: "746432410147",
+            appId: "1:746432410147:web:02d95cf9bee186f090f796"
+        };
         
         const dom = {
             transactionForm: document.getElementById('transactionForm'), dateInput: document.getElementById('date'), descriptionInput: document.getElementById('description'), categorySelect: document.getElementById('category'), typeSelect: document.getElementById('type'), amountInput: document.getElementById('amount'), transactionsTableBody: document.getElementById('transactionsTableBody'), totalIncomeElem: document.getElementById('totalIncome'), totalExpensesElem: document.getElementById('totalExpenses'), currentBalanceElem: document.getElementById('currentBalance'), noTransactionsMessage: document.getElementById('noTransactionsMessage'), connectionStatus: document.getElementById('connectionStatus'), tabButtons: document.querySelectorAll('.tab-button'), tabContents: document.querySelectorAll('.tab-content'), monthlySummaryContainer: document.getElementById('monthlySummaryContainer'), noMonthlyDataMessage: document.getElementById('noMonthlyDataMessage'), expenseChartCanvas: document.getElementById('expenseChart'), noChartDataMessage: document.getElementById('noChartDataMessage'),
@@ -205,23 +194,64 @@
                 document.getElementById(`tab-${e.currentTarget.dataset.tab}`).classList.add('active');
             }));
             setDefaultDate();
+            
+            // Register the service worker
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js').then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    }, err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+                });
+            }
         } catch (error) {
             console.error("Error de inicialización de Firebase:", error);
             dom.connectionStatus.textContent = "Error de conexión. Verifica tus llaves de Firebase.";
             dom.connectionStatus.className = "text-center text-xs text-red-600 mb-6";
         }
     </script>
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js').then(registration => {
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            }, err => {
-                console.log('ServiceWorker registration failed: ', err);
-            });
-        });
-    }
-</script>
 </body>
 </html>
+```
 
+### 2. Archivo `sw.js` (La Corrección Más Importante)
+
+**El Error:** Tu archivo `sw.js` estaba intentando guardar en la memoria caché un archivo llamado `mis_gastos.html`, pero tu archivo principal se llama `index.HTML`.
+
+**La Solución:** Cambié la línea para que busque el nombre correcto: `index.HTML`.
+
+
+```javascript
+const CACHE_NAME = 'gastos-app-cache-v1';
+const urlsToCache = [
+  './',
+  './index.HTML', // CORREGIDO: Ahora coincide con el nombre de tu archivo principal.
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('Opened cache');
+        return cache.addAll(urlsToCache);
+      })
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        // Cache hit - return response
+        if (response) {
+          return response;
+        }
+        return fetch(event.request);
+      }
+    )
+  );
+});
