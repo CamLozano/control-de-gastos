@@ -63,11 +63,11 @@
             <div class="bg-gray-50 p-6 rounded-lg shadow-inner mb-8">
                 <h2 class="text-xl font-semibold mb-4 text-gray-700">Añadir Nueva Transacción</h2>
                 <form id="transactionForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div class="input-group"><label for="date">Fecha:</label><input type="date" id="date" class="rounded-lg shadow-sm"></div>
-                    <div class="input-group"><label for="description">Concepto/Descripción:</label><input type="text" id="description" placeholder="Ej: Salario, Supermercado" class="rounded-lg shadow-sm"></div>
-                    <div class="input-group"><label for="category">Categoría:</label><select id="category" class="rounded-lg shadow-sm"><option value="">Selecciona</option><option value="Ingresos">Ingresos</option><option value="Alimentación">Alimentación</option><option value="Transporte">Transporte</option><option value="Vivienda">Vivienda</option><option value="Servicios">Servicios</option><option value="Entretenimiento">Entretenimiento</option><option value="Salud">Salud</option><option value="Educación">Educación</option><option value="Ropa">Ropa</option><option value="Otros">Otros</option></select></div>
-                    <div class="input-group"><label for="type">Tipo:</label><select id="type" class="rounded-lg shadow-sm"><option value="">Selecciona</option><option value="Ingreso">Ingreso</option><option value="Gasto">Gasto</option></select></div>
-                    <div class="input-group"><label for="amount">Valor:</label><input type="number" id="amount" placeholder="Ej: 50000" min="0" step="1" class="rounded-lg shadow-sm"></div>
+                    <div class="input-group"><label for="date">Fecha:</label><input type="date" name="date" id="date" class="rounded-lg shadow-sm"></div>
+                    <div class="input-group"><label for="description">Concepto/Descripción:</label><input type="text" name="description" id="description" placeholder="Ej: Salario, Supermercado" class="rounded-lg shadow-sm"></div>
+                    <div class="input-group"><label for="category">Categoría:</label><select name="category" id="category" class="rounded-lg shadow-sm"><option value="">Selecciona</option><option value="Ingresos">Ingresos</option><option value="Alimentación">Alimentación</option><option value="Transporte">Transporte</option><option value="Vivienda">Vivienda</option><option value="Servicios">Servicios</option><option value="Entretenimiento">Entretenimiento</option><option value="Salud">Salud</option><option value="Educación">Educación</option><option value="Ropa">Ropa</option><option value="Otros">Otros</option></select></div>
+                    <div class="input-group"><label for="type">Tipo:</label><select name="type" id="type" class="rounded-lg shadow-sm"><option value="">Selecciona</option><option value="Ingreso">Ingreso</option><option value="Gasto">Gasto</option></select></div>
+                    <div class="input-group"><label for="amount">Valor:</label><input type="number" name="amount" id="amount" placeholder="Ej: 50000" min="0" step="1" class="rounded-lg shadow-sm"></div>
                     <div class="input-group md:col-span-2 lg:col-span-1 flex items-end"><button type="submit" class="btn btn-primary w-full mt-6">Añadir</button></div>
                 </form>
             </div>
@@ -118,7 +118,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc, query, orderBy, serverTimestamp, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-         const firebaseConfig = {
+          const firebaseConfig = {
             apiKey: "AIzaSyCtx5dczhAdJASGkmPxve2T-4RFee3bVug",
             authDomain: "mis-gastos-personales-57e39.firebaseapp.com",
             projectId: "mis-gastos-personales-57e39",
@@ -293,9 +293,9 @@
 
         const addTransaction = async (e) => {
             e.preventDefault(); if (!userId) return;
-            const { date, description, category, type, amount } = Object.fromEntries(new FormData(e.target).entries());
-            if (!date || !description.trim() || !category || !type || !amount || parseFloat(amount) <= 0) { showNotification('Rellena todos los campos.', 'error'); return; }
-            try { await addDoc(collection(db, "users", userId, "transactions"), { date, description: description.trim(), category, type, amount: parseFloat(amount), createdAt: serverTimestamp() }); dom.transactionForm.reset(); setDefaultDate(); showNotification('Transacción añadida.', 'success');} catch (error) { console.error("Error al añadir:", error); }
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            if (!data.date || !data.description.trim() || !data.category || !data.type || !data.amount || parseFloat(data.amount) <= 0) { showNotification('Rellena todos los campos.', 'error'); return; }
+            try { await addDoc(collection(db, "users", userId, "transactions"), { ...data, description: data.description.trim(), amount: parseFloat(data.amount), createdAt: serverTimestamp() }); dom.transactionForm.reset(); setDefaultDate(); showNotification('Transacción añadida.', 'success');} catch (error) { console.error("Error al añadir:", error); }
         };
 
         const saveGoal = async (e) => { e.preventDefault(); const name = dom.goalName.value.trim(); const amount = parseFloat(dom.goalAmount.value); if (!name || isNaN(amount) || amount <= 0) return; await addDoc(collection(db, "users", userId, "goals"), { name, amount }); dom.goalForm.reset(); };
@@ -306,7 +306,7 @@
             if (!confirm('¿Añadir todos los gastos fijos a las transacciones de hoy?')) return;
             const batch = writeBatch(db);
             const date = new Date().toISOString().slice(0, 10);
-            recurring.forEach(item => { const docRef = doc(collection(db, "users", userId, "transactions")); batch.set(docRef, { ...item, type: 'Gasto', date, createdAt: serverTimestamp() }); });
+            recurring.forEach(({id, ...item}) => { const docRef = doc(collection(db, "users", userId, "transactions")); batch.set(docRef, { ...item, type: 'Gasto', date, createdAt: serverTimestamp() }); });
             await batch.commit(); showNotification('Gastos fijos añadidos a transacciones.', 'success');
         };
 
