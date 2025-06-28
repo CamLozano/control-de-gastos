@@ -118,7 +118,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc, query, orderBy, serverTimestamp, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-          const firebaseConfig = {
+         const firebaseConfig = {
             apiKey: "AIzaSyCtx5dczhAdJASGkmPxve2T-4RFee3bVug",
             authDomain: "mis-gastos-personales-57e39.firebaseapp.com",
             projectId: "mis-gastos-personales-57e39",
@@ -132,8 +132,6 @@
             notifications: document.getElementById('notifications'),
             tabButtons: document.querySelectorAll('.tab-button'),
             tabContents: document.querySelectorAll('.tab-content'),
-            
-            // Transaction Tab
             transactionForm: document.getElementById('transactionForm'),
             dateInput: document.getElementById('date'),
             descriptionInput: document.getElementById('description'),
@@ -145,32 +143,22 @@
             totalExpensesElem: document.getElementById('totalExpenses'),
             currentBalanceElem: document.getElementById('currentBalance'),
             noTransactionsMessage: document.getElementById('noTransactionsMessage'),
-
-            // Budgets Tab
             budgetsContainer: document.getElementById('budgetsContainer'),
-            
-            // Goals Tab
             goalForm: document.getElementById('goalForm'),
             goalName: document.getElementById('goalName'),
             goalAmount: document.getElementById('goalAmount'),
             goalsContainer: document.getElementById('goalsContainer'),
             totalSavingsElem: document.getElementById('totalSavings'),
-
-            // Recurring Tab
             recurringForm: document.getElementById('recurringForm'),
             recurringDescription: document.getElementById('recurringDescription'),
             recurringCategory: document.getElementById('recurringCategory'),
             recurringAmount: document.getElementById('recurringAmount'),
             addRecurringBtn: document.getElementById('addRecurringBtn'),
             recurringContainer: document.getElementById('recurringContainer'),
-
-            // Reports Tabs
             monthlySummaryContainer: document.getElementById('monthlySummaryContainer'),
             noMonthlyDataMessage: document.getElementById('noMonthlyDataMessage'),
             expenseChartCanvas: document.getElementById('expenseChart'),
             noChartDataMessage: document.getElementById('noChartDataMessage'),
-
-            // Tools Tab
             exportBtn: document.getElementById('exportBtn'),
             importBtn: document.getElementById('importBtn'),
             importFile: document.getElementById('importFile')
@@ -180,6 +168,7 @@
         let transactions = [], budgets = {}, goals = [], recurring = [];
         let expenseChart = null;
         let notifiedBudgets = new Set();
+        let isAppInitialized = false;
 
         const formatCOP = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
         const setDefaultDate = () => { if(dom.dateInput) dom.dateInput.value = new Date().toISOString().slice(0, 10); };
@@ -255,12 +244,11 @@
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => `${c.label}: ${formatCOP(c.parsed)} (${((c.parsed / c.dataset.data.reduce((a, b) => a + b, 0)) * 100).toFixed(2)}%)` } } } }
             });
         };
-
+        
         const renderBudgets = () => {
             dom.budgetsContainer.innerHTML = '';
             const categories = ["Alimentación", "Transporte", "Vivienda", "Servicios", "Entretenimiento", "Salud", "Educación", "Ropa", "Otros"];
             const currentMonthExpenses = transactions.filter(t => new Date(t.date).getUTCMonth() === new Date().getUTCMonth() && new Date(t.date).getUTCFullYear() === new Date().getUTCFullYear() && t.type === 'Gasto');
-            
             categories.forEach(cat => {
                 const budgetAmount = budgets[cat] || 0;
                 const spentAmount = currentMonthExpenses.filter(t => t.category === cat).reduce((sum, t) => sum + t.amount, 0);
@@ -268,22 +256,15 @@
                 let progressBarClass = 'bg-progress-green';
                 if (percentage > 90) progressBarClass = 'bg-progress-red';
                 else if (percentage > 75) progressBarClass = 'bg-progress-yellow';
-                
                 const card = document.createElement('div');
                 card.className = "p-4 rounded-lg shadow bg-white";
                 card.innerHTML = `<div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-gray-800">${cat}</h4><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">$</span><input type="number" value="${budgetAmount}" min="0" data-category="${cat}" class="budget-input w-32 text-right p-1 pl-6 border rounded"></div></div><div class="text-sm text-gray-500 mb-2">Gastado: ${formatCOP(spentAmount)} de ${formatCOP(budgetAmount)}</div><div class="progress-bar"><div class="progress-bar-fill ${progressBarClass}" style="width: ${Math.min(percentage, 100)}%;"></div></div>`;
                 dom.budgetsContainer.appendChild(card);
-
                 const notificationId = `${cat}-${new Date().getFullYear()}-${new Date().getMonth()}`;
-                if (percentage > 90 && !notifiedBudgets.has(notificationId)) {
-                    showNotification(`¡Cuidado! Llevas ${percentage.toFixed(0)}% de tu presupuesto de ${cat}`, 'warning');
-                    notifiedBudgets.add(notificationId);
-                }
+                if (percentage > 90 && !notifiedBudgets.has(notificationId)) { showNotification(`¡Cuidado! Llevas ${percentage.toFixed(0)}% de tu presupuesto de ${cat}`, 'warning'); notifiedBudgets.add(notificationId); }
             });
              dom.budgetsContainer.querySelectorAll('.budget-input').forEach(input => {
-                input.addEventListener('change', async (e) => {
-                    await setDoc(doc(db, "users", userId, "budgets", e.target.dataset.category), { amount: parseFloat(e.target.value) || 0 });
-                });
+                input.addEventListener('change', (e) => setDoc(doc(db, "users", userId, "budgets", e.target.dataset.category), { amount: parseFloat(e.target.value) || 0 }));
             });
         };
 
@@ -310,32 +291,34 @@
             dom.recurringContainer.querySelectorAll('.btn-delete').forEach(button => button.addEventListener('click', e => deleteDoc(doc(db, "users", userId, "recurringExpenses", e.currentTarget.dataset.id))));
         };
 
-        const addTransaction = async (e) => { e.preventDefault(); /* ... same as before ... */ };
-        
+        const addTransaction = async (e) => {
+            e.preventDefault(); if (!userId) return;
+            const { date, description, category, type, amount } = Object.fromEntries(new FormData(e.target).entries());
+            if (!date || !description.trim() || !category || !type || !amount || parseFloat(amount) <= 0) { showNotification('Rellena todos los campos.', 'error'); return; }
+            try { await addDoc(collection(db, "users", userId, "transactions"), { date, description: description.trim(), category, type, amount: parseFloat(amount), createdAt: serverTimestamp() }); dom.transactionForm.reset(); setDefaultDate(); showNotification('Transacción añadida.', 'success');} catch (error) { console.error("Error al añadir:", error); }
+        };
+
         const saveGoal = async (e) => { e.preventDefault(); const name = dom.goalName.value.trim(); const amount = parseFloat(dom.goalAmount.value); if (!name || isNaN(amount) || amount <= 0) return; await addDoc(collection(db, "users", userId, "goals"), { name, amount }); dom.goalForm.reset(); };
         const saveRecurring = async (e) => { e.preventDefault(); const description = dom.recurringDescription.value.trim(), category = dom.recurringCategory.value, amount = parseFloat(dom.recurringAmount.value); if(!description || !category || isNaN(amount) || amount <=0) return; await addDoc(collection(db, "users", userId, "recurringExpenses"), { description, category, amount }); dom.recurringForm.reset(); };
+        
         const postRecurringTransactions = async () => {
             if (recurring.length === 0) { showNotification('No hay gastos fijos para añadir.', 'info'); return; }
             if (!confirm('¿Añadir todos los gastos fijos a las transacciones de hoy?')) return;
             const batch = writeBatch(db);
             const date = new Date().toISOString().slice(0, 10);
-            recurring.forEach(item => {
-                const docRef = doc(collection(db, "users", userId, "transactions"));
-                batch.set(docRef, { ...item, type: 'Gasto', date, createdAt: serverTimestamp() });
-            });
-            await batch.commit();
-            showNotification('Gastos fijos añadidos a transacciones.', 'success');
+            recurring.forEach(item => { const docRef = doc(collection(db, "users", userId, "transactions")); batch.set(docRef, { ...item, type: 'Gasto', date, createdAt: serverTimestamp() }); });
+            await batch.commit(); showNotification('Gastos fijos añadidos a transacciones.', 'success');
         };
 
-        const exportData = async () => { /* ... same as before ... */ };
-        const importData = (event) => { /* ... same as before ... */ };
+        const exportData = async () => { /* ... existing code ... */ };
+        const importData = (event) => { /* ... existing code ... */ };
 
         const setupFirestoreListeners = () => {
             const collections = { transactions, budgets, goals, recurring };
             Object.keys(collections).forEach(name => {
                 const refName = name === 'recurring' ? 'recurringExpenses' : name;
                 const ref = collection(db, "users", userId, refName);
-                listeners[name] = onSnapshot(query(ref), snapshot => {
+                onSnapshot(query(ref), snapshot => {
                     if (name === 'budgets') { budgets = snapshot.docs.reduce((acc, doc) => ({...acc, [doc.id]: doc.data().amount}), {}); } 
                     else { window[name] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); }
                     renderAll();
@@ -343,45 +326,45 @@
             });
         };
         
-        const main = () => {
-            try {
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                onAuthStateChanged(auth, user => {
-                    if (user) {
-                        userId = user.uid;
-                        dom.connectionStatus.textContent = `Conectado como: ${userId.substring(0, 8)}...`;
-                        dom.connectionStatus.className = "text-center text-xs text-green-600 mb-6";
-                        setupFirestoreListeners();
-                    } else {
-                        signInAnonymously(auth).catch(err => console.error("Error de inicio de sesión:", err));
-                    }
-                });
-                setDefaultDate();
-                dom.transactionForm.addEventListener('submit', addTransaction);
-                dom.goalForm.addEventListener('submit', saveGoal);
-                dom.recurringForm.addEventListener('submit', saveRecurring);
-                dom.addRecurringBtn.addEventListener('click', postRecurringTransactions);
-                dom.exportBtn.addEventListener('click', exportData);
-                dom.importBtn.addEventListener('click', () => dom.importFile.click());
-                dom.importFile.addEventListener('change', importData);
-                dom.tabButtons.forEach(btn => btn.addEventListener('click', e => {
-                    const targetTab = e.currentTarget.dataset.tab;
-                    dom.tabButtons.forEach(b => b.classList.remove('active'));
-                    e.currentTarget.classList.add('active');
-                    dom.tabContents.forEach(c => c.classList.remove('active'));
-                    document.getElementById(`tab-${targetTab}`).classList.add('active');
-                    if (targetTab === 'chart') renderExpenseChart();
-                }));
-            } catch (error) {
-                console.error("Error de inicialización:", error);
-                dom.connectionStatus.textContent = "Error de conexión. Verifica tus llaves de Firebase.";
-                dom.connectionStatus.className = "text-center text-xs text-red-600 mb-6";
-            }
+        const initApp = (user) => {
+            if (isAppInitialized) return;
+            userId = user.uid;
+            dom.connectionStatus.textContent = `Conectado como: ${userId.substring(0, 8)}...`;
+            dom.connectionStatus.className = "text-center text-xs text-green-600 mb-6";
+
+            setupFirestoreListeners();
+            setDefaultDate();
+
+            dom.transactionForm.addEventListener('submit', addTransaction);
+            dom.goalForm.addEventListener('submit', saveGoal);
+            dom.recurringForm.addEventListener('submit', saveRecurring);
+            dom.addRecurringBtn.addEventListener('click', postRecurringTransactions);
+            dom.exportBtn.addEventListener('click', exportData);
+            dom.importBtn.addEventListener('click', () => dom.importFile.click());
+            dom.importFile.addEventListener('change', importData);
+            dom.tabButtons.forEach(btn => btn.addEventListener('click', e => {
+                const targetTab = e.currentTarget.dataset.tab;
+                dom.tabButtons.forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                dom.tabContents.forEach(c => c.classList.remove('active'));
+                document.getElementById(`tab-${targetTab}`).classList.add('active');
+                if (targetTab === 'chart') renderExpenseChart();
+            }));
+            isAppInitialized = true;
         };
 
-        main();
+        try {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            onAuthStateChanged(auth, user => {
+                if (user) { initApp(user); } 
+                else { signInAnonymously(auth).catch(err => console.error("Error de inicio de sesión:", err)); }
+            });
+        } catch (error) {
+            console.error("Error de inicialización:", error);
+            dom.connectionStatus.textContent = "Error de conexión. Verifica tus llaves de Firebase.";
+        }
     </script>
 </body>
 </html>
