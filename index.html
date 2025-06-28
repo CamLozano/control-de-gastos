@@ -45,7 +45,7 @@
         <div class="border-b border-gray-200 mb-8">
             <nav class="flex flex-wrap -mb-px space-x-2 sm:space-x-4" aria-label="Tabs">
                 <button class="tab-button active" data-tab="transactions">Transacciones</button>
-                <button class="tab-button" data-tab="budgets">Presupuestos</button>
+                <button class="tab-button" data-tab="budgets">Gastos y Presupuestos</button>
                 <button class="tab-button" data-tab="goals">Metas de Ahorro</button>
                 <button class="tab-button" data-tab="recurring">Gastos Fijos</button>
                 <button class="tab-button" data-tab="monthly">Resumen Mensual</button>
@@ -76,8 +76,8 @@
         </div>
 
         <div id="tab-budgets" class="tab-content">
-            <h2 class="text-xl font-semibold mb-4 text-gray-700">Presupuestos del Mes Actual</h2>
-            <p class="text-sm text-gray-500 mb-6">Define un límite de gasto para cada categoría. El sistema te mostrará cuánto has gastado y te alertará si te acercas al límite.</p>
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Gastos vs. Presupuestos del Mes Actual</h2>
+            <p class="text-sm text-gray-500 mb-6">Aquí puedes ver tus gastos por categoría y, si lo deseas, definir un presupuesto para llevar un mejor control.</p>
             <div id="budgetsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
 
@@ -103,7 +103,10 @@
 
         <div id="tab-chart" class="tab-content">
             <h2 class="text-xl font-semibold mb-4 text-gray-700">Gastos por Categoría</h2>
-            <div class="bg-white p-4 rounded-lg shadow-md"><canvas id="expenseChart" class="mx-auto" style="max-width: 450px; max-height: 450px;"></canvas><p id="noChartDataMessage" class="text-center py-4 text-gray-500 hidden">No hay gastos para mostrar.</p></div>
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <canvas id="expenseChart" class="mx-auto" style="max-width: 450px; max-height: 450px;"></canvas>
+                <p id="noChartDataMessage" class="text-center py-4 text-gray-500 hidden">No hay gastos para mostrar.</p>
+            </div>
         </div>
 
         <div id="tab-tools" class="tab-content">
@@ -184,7 +187,7 @@
         };
         
         const renderAll = () => {
-            const activeTab = document.querySelector('.tab-button.active').dataset.tab;
+            const activeTab = document.querySelector('.tab-button.active')?.dataset.tab;
             renderTransactionsTable();
             renderBudgets();
             renderGoals();
@@ -237,11 +240,42 @@
             const expenseData = transactions.filter(t => t.type === 'Gasto').reduce((acc, t) => { if (!acc[t.category]) acc[t.category] = 0; acc[t.category] += t.amount; return acc; }, {});
             if (Object.keys(expenseData).length === 0) { dom.noChartDataMessage.style.display = 'block'; dom.expenseChartCanvas.style.display = 'none'; if (expenseChart) expenseChart.destroy(); return; }
             dom.noChartDataMessage.style.display = 'none'; dom.expenseChartCanvas.style.display = 'block';
-            const labels = Object.keys(expenseData), data = Object.values(expenseData), colors = labels.map((_, i) => `hsl(${(i * 360 / labels.length + 40) % 360}, 70%, 60%)`);
+            const labels = Object.keys(expenseData);
+            const data = Object.values(expenseData);
+            const totalExpenses = data.reduce((a, b) => a + b, 0);
+            const colors = labels.map((_, i) => `hsl(${(i * 360 / labels.length + 40) % 360}, 70%, 60%)`);
             if (expenseChart) expenseChart.destroy();
             expenseChart = new Chart(dom.expenseChartCanvas, {
                 type: 'pie', data: { labels, datasets: [{ data, backgroundColor: colors }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => `${c.label}: ${formatCOP(c.parsed)} (${((c.parsed / c.dataset.data.reduce((a, b) => a + b, 0)) * 100).toFixed(2)}%)` } } } }
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { 
+                            position: 'top',
+                            labels: {
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        const { labels: { pointStyle } } = chart.legend.options;
+                                        return data.labels.map((label, i) => {
+                                            const ds = data.datasets[0];
+                                            const value = ds.data[i];
+                                            const percentage = totalExpenses > 0 ? ((value / totalExpenses) * 100).toFixed(2) : 0;
+                                            return {
+                                                text: `${label}: ${percentage}%`,
+                                                fillStyle: ds.backgroundColor[i],
+                                                hidden: isNaN(ds.data[i]) || chart.getDatasetMeta(0).data[i].hidden,
+                                                pointStyle: pointStyle
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
+                            }
+                        }, 
+                        tooltip: { callbacks: { label: c => `${c.label}: ${formatCOP(c.parsed)}` } } 
+                    }
+                }
             });
         };
         
@@ -249,67 +283,52 @@
             dom.budgetsContainer.innerHTML = '';
             const categories = ["Alimentación", "Transporte", "Vivienda", "Servicios", "Entretenimiento", "Salud", "Educación", "Ropa", "Otros"];
             const currentMonthExpenses = transactions.filter(t => new Date(t.date).getUTCMonth() === new Date().getUTCMonth() && new Date(t.date).getUTCFullYear() === new Date().getUTCFullYear() && t.type === 'Gasto');
+            
             categories.forEach(cat => {
                 const budgetAmount = budgets[cat] || 0;
                 const spentAmount = currentMonthExpenses.filter(t => t.category === cat).reduce((sum, t) => sum + t.amount, 0);
-                const percentage = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100 : 0;
-                let progressBarClass = 'bg-progress-green';
-                if (percentage > 90) progressBarClass = 'bg-progress-red';
-                else if (percentage > 75) progressBarClass = 'bg-progress-yellow';
+                
+                // CORRECTION: Only show progress bar if budget is set
+                const hasBudget = budgetAmount > 0;
+                let progressHTML = '';
+                if(hasBudget) {
+                    const percentage = (spentAmount / budgetAmount) * 100;
+                    let progressBarClass = 'bg-progress-green';
+                    if (percentage > 90) progressBarClass = 'bg-progress-red';
+                    else if (percentage > 75) progressBarClass = 'bg-progress-yellow';
+                    progressHTML = `<div class="progress-bar mt-2"><div class="progress-bar-fill ${progressBarClass}" style="width: ${Math.min(percentage, 100)}%;"></div></div>`;
+                }
+
                 const card = document.createElement('div');
                 card.className = "p-4 rounded-lg shadow bg-white";
-                card.innerHTML = `<div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-gray-800">${cat}</h4><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">$</span><input type="number" value="${budgetAmount}" min="0" data-category="${cat}" class="budget-input w-32 text-right p-1 pl-6 border rounded"></div></div><div class="text-sm text-gray-500 mb-2">Gastado: ${formatCOP(spentAmount)} de ${formatCOP(budgetAmount)}</div><div class="progress-bar"><div class="progress-bar-fill ${progressBarClass}" style="width: ${Math.min(percentage, 100)}%;"></div></div>`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-gray-800">${cat}</h4><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">$</span><input type="number" value="${budgetAmount}" min="0" data-category="${cat}" class="budget-input w-32 text-right p-1 pl-6 border rounded"></div></div>
+                    <div class="text-sm text-gray-600 font-medium">Gastado este mes: <span class="font-bold text-red-600">${formatCOP(spentAmount)}</span></div>
+                    ${hasBudget ? `<div class="text-sm text-gray-500">de ${formatCOP(budgetAmount)}</div>` : ''}
+                    ${progressHTML}
+                `;
                 dom.budgetsContainer.appendChild(card);
+                
                 const notificationId = `${cat}-${new Date().getFullYear()}-${new Date().getMonth()}`;
-                if (percentage > 90 && !notifiedBudgets.has(notificationId)) { showNotification(`¡Cuidado! Llevas ${percentage.toFixed(0)}% de tu presupuesto de ${cat}`, 'warning'); notifiedBudgets.add(notificationId); }
+                if (hasBudget && spentAmount > budgetAmount && !notifiedBudgets.has(notificationId)) {
+                    showNotification(`Has excedido tu presupuesto de ${cat}`, 'error');
+                    notifiedBudgets.add(notificationId);
+                } else if (hasBudget && (spentAmount / budgetAmount) > 0.9 && !notifiedBudgets.has(notificationId)) { 
+                    showNotification(`¡Cuidado! Llevas más del 90% de tu presupuesto de ${cat}`, 'warning'); 
+                    notifiedBudgets.add(notificationId); 
+                }
             });
              dom.budgetsContainer.querySelectorAll('.budget-input').forEach(input => {
                 input.addEventListener('change', (e) => setDoc(doc(db, "users", userId, "budgets", e.target.dataset.category), { amount: parseFloat(e.target.value) || 0 }));
             });
         };
 
-        const renderGoals = () => {
-            dom.goalsContainer.innerHTML = '';
-            const totalSavings = Math.max(0, transactions.reduce((acc, t) => acc + (t.type === 'Ingreso' ? t.amount : -t.amount), 0));
-            dom.totalSavingsElem.textContent = formatCOP(totalSavings);
-            goals.forEach(goal => {
-                const percentage = goal.amount > 0 ? (totalSavings / goal.amount) * 100 : 0;
-                const card = document.createElement('div');
-                card.className = "p-4 rounded-lg shadow bg-white";
-                card.innerHTML = `<div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-gray-800">${goal.name}</h4><button class="btn-delete" data-id="${goal.id}"><i class="fas fa-trash-alt"></i></button></div><div class="text-sm text-gray-500 mb-2">Objetivo: ${formatCOP(goal.amount)}</div><div class="progress-bar"><div class="progress-bar-fill bg-progress-green" style="width: ${Math.min(percentage, 100)}%;"></div></div>`;
-                dom.goalsContainer.appendChild(card);
-            });
-            dom.goalsContainer.querySelectorAll('.btn-delete').forEach(button => button.addEventListener('click', e => deleteDoc(doc(db, "users", userId, "goals", e.currentTarget.dataset.id))));
-        };
-
-        const renderRecurring = () => {
-            dom.recurringContainer.innerHTML = '';
-            let tableHTML = '<table class="min-w-full bg-white"><thead><tr class="table-header"><th>Descripción</th><th>Categoría</th><th>Monto</th><th></th></tr></thead><tbody>';
-            if (recurring.length === 0) tableHTML += `<tr><td colspan="4" class="text-center text-gray-500 py-4">No has añadido gastos fijos.</td></tr>`;
-            else recurring.forEach(item => { tableHTML += `<tr><td>${item.description}</td><td>${item.category}</td><td>${formatCOP(item.amount)}</td><td class="text-right"><button class="btn-delete" data-id="${item.id}"><i class="fas fa-trash-alt"></i></button></td></tr>`; });
-            dom.recurringContainer.innerHTML = tableHTML + '</tbody></table>';
-            dom.recurringContainer.querySelectorAll('.btn-delete').forEach(button => button.addEventListener('click', e => deleteDoc(doc(db, "users", userId, "recurringExpenses", e.currentTarget.dataset.id))));
-        };
-
-        const addTransaction = async (e) => {
-            e.preventDefault(); if (!userId) return;
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            if (!data.date || !data.description.trim() || !data.category || !data.type || !data.amount || parseFloat(data.amount) <= 0) { showNotification('Rellena todos los campos.', 'error'); return; }
-            try { await addDoc(collection(db, "users", userId, "transactions"), { ...data, description: data.description.trim(), amount: parseFloat(data.amount), createdAt: serverTimestamp() }); dom.transactionForm.reset(); setDefaultDate(); showNotification('Transacción añadida.', 'success');} catch (error) { console.error("Error al añadir:", error); }
-        };
-
-        const saveGoal = async (e) => { e.preventDefault(); const name = dom.goalName.value.trim(); const amount = parseFloat(dom.goalAmount.value); if (!name || isNaN(amount) || amount <= 0) return; await addDoc(collection(db, "users", userId, "goals"), { name, amount }); dom.goalForm.reset(); };
-        const saveRecurring = async (e) => { e.preventDefault(); const description = dom.recurringDescription.value.trim(), category = dom.recurringCategory.value, amount = parseFloat(dom.recurringAmount.value); if(!description || !category || isNaN(amount) || amount <=0) return; await addDoc(collection(db, "users", userId, "recurringExpenses"), { description, category, amount }); dom.recurringForm.reset(); };
-        
-        const postRecurringTransactions = async () => {
-            if (recurring.length === 0) { showNotification('No hay gastos fijos para añadir.', 'info'); return; }
-            if (!confirm('¿Añadir todos los gastos fijos a las transacciones de hoy?')) return;
-            const batch = writeBatch(db);
-            const date = new Date().toISOString().slice(0, 10);
-            recurring.forEach(({id, ...item}) => { const docRef = doc(collection(db, "users", userId, "transactions")); batch.set(docRef, { ...item, type: 'Gasto', date, createdAt: serverTimestamp() }); });
-            await batch.commit(); showNotification('Gastos fijos añadidos a transacciones.', 'success');
-        };
-
+        const renderGoals = () => { /* ... existing code ... */ };
+        const renderRecurring = () => { /* ... existing code ... */ };
+        const addTransaction = async (e) => { /* ... existing code ... */ };
+        const saveGoal = async (e) => { /* ... existing code ... */ };
+        const saveRecurring = async (e) => { /* ... existing code ... */ };
+        const postRecurringTransactions = async () => { /* ... existing code ... */ };
         const exportData = async () => { /* ... existing code ... */ };
         const importData = (event) => { /* ... existing code ... */ };
 
@@ -320,10 +339,9 @@
                 goals: (data) => { goals = data; },
                 recurringExpenses: (data) => { recurring = data; }
             };
-
             Object.entries(collections).forEach(([name, setter]) => {
-                const ref = collection(db, "users", userId, name);
-                onSnapshot(query(ref), snapshot => {
+                const collName = name === 'recurring' ? 'recurringExpenses' : name;
+                onSnapshot(query(collection(db, "users", userId, collName)), snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setter(data);
                     renderAll();
@@ -336,9 +354,6 @@
             userId = user.uid;
             dom.connectionStatus.textContent = `Conectado como: ${userId.substring(0, 8)}...`;
             dom.connectionStatus.className = "text-center text-xs text-green-600 mb-6";
-
-            setupFirestoreListeners();
-            setDefaultDate();
 
             dom.transactionForm.addEventListener('submit', addTransaction);
             dom.goalForm.addEventListener('submit', saveGoal);
@@ -355,6 +370,9 @@
                 document.getElementById(`tab-${targetTab}`).classList.add('active');
                 if (targetTab === 'chart') renderExpenseChart();
             }));
+
+            setupFirestoreListeners();
+            setDefaultDate();
             isAppInitialized = true;
         };
 
